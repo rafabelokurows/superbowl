@@ -1,0 +1,221 @@
+---
+title: "The biggest sports event of the year: A Superbowl History Analysis"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+```{r, warning=FALSE,message=FALSE}
+library(tidyverse)
+library(smooth)
+library(usmap)
+library(mapdata)
+library(ggplot2)
+library(reshape2)
+Sys.setlocale("LC_ALL", "C") #setting the locale will be important for working with dates later
+```
+
+The Superbowl is the popular name for the championship game of the National Football League (NFL). It's annually the most-watched single-day sporting event in the world. 
+Unlike other professional sports leagues that decide their champion in a series of games, the NFL decides its champion with only one, so there's a sense of urgency and is usually as thrilling as it can be.
+On top of that, there's the entertainment stuff: companies like Apple, Sony, Coca-Cola and others pay millions of Dollars for a few seconds of advertisement, some of the top-selling musicians in the world perform every year on the Half Time Show, etc.
+
+In this article we're gonna analyze some of the statistics relating to this big event. Basic stuff like: Who won most titles? Which State most hosted the game? And also: are the games getting closer every year in terms of margin of victory? What is the position most likely to win an SB MVP award?
+Let's dive into it!
+
+## Loading the data
+
+```{r}
+sb = read.csv(file="superbowl.csv")
+head(sb)
+```
+
+First, a quick look at the data:
+
+```{r}
+summary(sb)
+```
+A few things to note:
+
+* No Missing values, which is great.  
+* The date format it's not very easy to work with, so we're gonna convert it  
+* Some of the MVP's names have "+" at the end, so we're going to remove that as well
+
+## Data processing
+
+```{r}
+sb$Date = as.Date(sb$Date, "%b %d %Y")
+sb = sb[order(sb$Date),]
+```
+We convert the date to a better format and order the dataframe based on that new date, so have a beautiful sequence of Superbowl I, II, III and so on..
+
+```{r}
+sb$MVP=gsub("\\+","",sb$MVP)
+sb$MVP <- as.factor(sb$MVP)
+sb$MVP[19]
+```
+We removed the "+" at the end of some of the players' names.
+
+
+## MVP analysis: who played the best at the biggest stage?
+Next, we're loading a file with the MVP names, team and position and merging it with the original dataframe.
+```{r}
+mvpsb = read.csv(file="mvpsb.csv")
+head(mvpsb)
+```
+
+```{r}
+sb$SB <- as.factor(sb$SB)
+mvpsb$SB <- as.factor(mvpsb$SB)
+sb2 = merge(sb, mvpsb[,c(1,3)], by = 'SB')
+sb2$POSITION = as.factor(sb2$POSITION)
+sort(table(sb2$POSITION),decreasing = TRUE)
+```
+A staggering **30 of the 54 SB MVP awards went to a QB**. I guess that answers the question: has the NFL evolved to be a pass-first league?
+And also, a FB and a KR received the award. Let's look into that in a bit.
+
+
+```{r}
+sb2[sb2$POSITION == 'RB',]
+```
+Last time a Running Back managed to win the SB MVP award: **Terrell Davis in 1998**
+And rightfully so, with 30 carries for 157 yards and 3 Touchdowns and 2 catches for 8 yards.
+
+```{r}
+sb2[sb2$POSITION == 'FB',]
+```
+Seeing a FB (Fullback) in the table seemed strange to me so I had to double check, because a FB is a rarity in today's game. But two things: it was the 70s and it was Larry Csonka, a guy who carried the ball a lot. In today's game, he'd be a "regular" RB, so nothing wrong there, moving on...
+
+```{r}
+sb2[sb2$POSITION == 'KR',]
+```
+Also weird, a Kick Returner being awarded the MVP. He actually returned a kick for a touchdown that sealed the game, but that was it.
+
+## Supwerbowl date: when does it happen?
+
+```{r}
+dates = format(sb2$Date, '%m-%d')
+paste('Earliest game: ',min(dates),' --- Latest game: ',max(dates))
+```
+Although the Superbowl now is held at the first two weeks of February, it was once played much earlier than that.
+We can see that the **earliest a Superbowl was ever played was January 09th and the latest was February 07th**
+
+## Analysis of points scored by the winning teams: How much you have to score to win it all
+
+```{r}
+mean(sb2$Winner.Pts)
+```
+**The average points scored by the Winner team is 30**
+
+```{r}
+rbind(sb2[which.min(sb2$Winner.Pts),],sb2[which.max(sb2$Winner.Pts),])
+```
+The **18' Patriots won with only 13 points while the 89' 49ers scored 55!!**
+
+```{r,warning=FALSE}
+winningma=sma(sb2$Winner.Pts,order = 10,h = 0,silent=FALSE)
+```
+
+Using a moving average with 10 years, we can see that **the average of points scored by the winning team is growing**
+
+## Analysis of points scored by the losing teams: close, but not enough
+
+```{r}
+rbind(sb2[sb2$Loser.Pts == min(sb2$Loser.Pts),],sb2[which.max(sb2$Loser.Pts),])
+```
+The **18' Rams and 71' Dolphins managed to score only 3 points** while **the 18' Patriots scored 33 points** and still lost to the Eagles led by Nick Foles in one of the greatest Superbowls ever played
+
+
+```{r}
+mean(sb2$Loser.Pts)
+```
+The **average points scored by the losing team is 16**
+
+```{r,warning=FALSE}
+losingma=sma(sb2$Loser.Pts,order = 10,silent=FALSE,h = 0)
+```
+
+The moving average with a window of 10 years shows us that the **average of points scored by the losing team is also growing**
+
+## Margin of victory: how close are these games?
+
+Let's now analyze the margin of victory over time
+```{r}
+sb2$diff = sb2$Winner.Pts - sb2$Loser.Pts
+rbind(sb2[sb2$diff == min(sb2$diff),],sb2[which.max(sb2$diff),])
+```
+Most Superbowls are pretty close with the closest one being the 1991 one, where the Giants beat the Bills by only one point. One year before that, on the other hand, the 49ers beat the Broncos by 45.
+
+```{r}
+mean(sb2$diff)
+```
+The **average margin of victory is 14**, pretty large, but how did it evolve over time? 
+
+```{r,warning=FALSE}
+marginma=sma(sb2$diff,order = 10,silent=FALSE,h = 0)
+```
+
+Using the same 10-year window, we can see the games were really close by SB 30, then we had a few blowouts by 2000-2005 that increased the average, but **the trend seems to be moving down now** 
+
+## Which States have hosted the most Superbowls: the weather is nice here...
+
+```{r}
+states <- map_data('state')
+#first we load the list of States so then we can merge it with our actual data
+state=unique(states$region)
+#then we create a vector with the name of all states
+t = as.data.frame(table(tolower(sb2$State)))
+#a table with the states that actually held the SB
+u = merge(as.data.frame(state),t,by.x='state',by.y='Var1',all=TRUE)
+u[is.na(u)] = 0
+#merge both so we get a table with all states and those that haven't hosted get a value of 0
+
+plot_usmap(data = u, values = "Freq", color = "black",exclude = c('AK','HI'))+ 
+    scale_fill_continuous(low = "white", high = "blue", name = "No. Games hosted", label = scales::comma )+     theme(legend.position = "right",plot.title = element_text( face = "bold", size = (15), hjust = 0.5))+     labs(title="No. of SuperBowls by State", colour = 'black')
+
+```
+
+States with warmer weather seem to be the common choice for logistical reasons. The States that hosted the most SuperBowls are Florida (16), California (12), Lousiana (10) and Texas (4).
+
+## SuperBowl wins/losses: getting to the big game is one thing...
+
+And finally, the most important numbers for all 32 NFL franchises and its fans. Which team won the most Superbowls?
+```{r}
+sb2 %>%
+  count(Winner, sort = TRUE, name = "titles") %>%
+  head(12) %>%
+  ggplot(aes(x=reorder(Winner,titles),y=titles))+
+  geom_col(fill="steelblue") + 
+  xlab("Teams") + ylab('Titles')+ ggtitle('SB Wins')+
+  coord_flip()
+```
+
+The **New England Patriots** and **Pittsburgh Steelers** hold the first place with 6 SB titles. The 49ers and Cowboys, not having won one for the last 20 years or so, are lagging a little bit behind.
+
+```{r}
+sb2 %>%
+  count(Loser, sort = TRUE, name = "losses") %>%
+  head(12) %>%
+  ggplot(aes(x=reorder(Loser,losses),y=losses))+
+  geom_col(fill="steelblue") + 
+  xlab("Teams") + ylab('Losses')+ ggtitle('Teams with the most SB Losses')+
+  coord_flip()
+```
+
+The **Patriots** again, and the **Denver Broncos** are teams that lost the most SBs with 5. To win it you have to be in it first, I guess. Unless you are the Buffalo Bills, who lost 4 straight SBs in the 90s and haven't won a single one. But that's a story for another time. 
+
+## Takeaways
+Although the data available in this dataset is kinda limited, there are a lot of interesting facts with can take away from this analysis:  
+
+* Patriots and Steelers are the teams with most SB wins (6)
+* Patriots and Broncos are the teams with most losses in the SB (5)  
+* States that hosted the most SBs: Florida (16), California (13) - Warm weather  
+* QB is the position that produced the most SB MPVs - not surprisingly  
+* The last RB to win this award was Terrell Davis in 1998  
+* The margin of victory is decreasing in the last few years, the losing team is making the games tighter than they were 10 years ago
+
+
+## Future work
+- Add more information to the MVP analysis  
+- Home team x Away Team: is there any significance to a team being considered the home or away team?  
+- Playoff seed x SB win/loss
